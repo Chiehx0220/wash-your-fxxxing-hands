@@ -20,17 +20,22 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v4
 
-      - name: Decode keystore
+      - name: Decode keystore, detect key alias
         env:
           KEYSTORE_BASE64: ${{ secrets.SIGNING_KEYSTORE_BASE64 }}
+          STORE_PASSWORD: ${{ secrets.SIGNING_STORE_PASSWORD }}
         run: |
           echo "$KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/release.jks"
+          alias=$(keytool -list -keystore "$RUNNER_TEMP/release.jks" -storepass "$STORE_PASSWORD" \
+            | awk -F', ' '/PrivateKeyEntry/ {print $1; exit}')
+          test -n "$alias" || { echo "No private key entry in keystore"; exit 1; }
+          echo "Key alias: $alias"
           echo "SIGNING_KEYSTORE=$RUNNER_TEMP/release.jks" >> "$GITHUB_ENV"
+          echo "SIGNING_KEY_ALIAS=$alias" >> "$GITHUB_ENV"
 
       - name: Build signed APK
         env:
           SIGNING_STORE_PASSWORD: ${{ secrets.SIGNING_STORE_PASSWORD }}
-          SIGNING_KEY_ALIAS: ${{ secrets.SIGNING_KEY_ALIAS }}
           SIGNING_KEY_PASSWORD: ${{ secrets.SIGNING_KEY_PASSWORD }}
         run: >
           ./gradlew assembleRelease
