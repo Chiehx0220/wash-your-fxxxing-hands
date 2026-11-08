@@ -4,4 +4,5 @@ build/
 *.iml
 .kotlin/
 .DS_Store
+node_modules/
 app/src/main/assets/roster.json

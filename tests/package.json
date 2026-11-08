@@ -1,0 +1,6 @@
+{
+  "name": "wash-your-fxxxing-hands-tests",
+  "private": true,
+  "scripts": { "test": "node --test *.test.js" },
+  "devDependencies": { "jsdom": "^25.0.1" }
+}

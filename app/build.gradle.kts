@@ -4,7 +4,7 @@ plugins {
 }
 
 android {
-    namespace = "com.chieh.handwashaudit"
+    namespace = "io.github.chiehx0220.wash_your_fxxxing_hands"
     compileSdk = 34
 
     defaultConfig {

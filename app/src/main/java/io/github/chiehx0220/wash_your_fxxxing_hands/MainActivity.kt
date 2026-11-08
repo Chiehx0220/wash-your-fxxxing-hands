@@ -1,8 +1,9 @@
-package com.chieh.handwashaudit
+package io.github.chiehx0220.wash_your_fxxxing_hands
 
 import android.annotation.SuppressLint
 import android.app.Activity
 import android.content.Intent
+import android.graphics.Bitmap
 import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
@@ -34,6 +35,7 @@ class MainActivity : Activity() {
 
     private lateinit var webView: WebView
     private lateinit var splash: SplashView
+    private val backBridge = BackBridge()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -64,7 +66,11 @@ class MainActivity : Activity() {
 
     @Deprecated("Deprecated in Java")
     override fun onBackPressed() {
-        if (webView.canGoBack()) webView.goBack() else super.onBackPressed()
+        when {
+            backBridge.consumeBack() -> Unit
+            webView.canGoBack() -> webView.goBack()
+            else -> super.onBackPressed()
+        }
     }
 
     private fun applySystemBars(surface: Int, light: Boolean) {
@@ -83,6 +89,7 @@ class MainActivity : Activity() {
         if (BuildConfig.DEBUG) WebView.setWebContentsDebuggingEnabled(true)
 
         webView.addJavascriptInterface(NativeStore(this) { runOnUiThread { splash.dismiss() } }, "NativeStore")
+        backBridge.install(webView)
         webView.webViewClient = object : WebViewClient() {
             // Host allowlist; others via ACTION_VIEW
             override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
@@ -91,6 +98,8 @@ class MainActivity : Activity() {
                 startActivity(Intent(Intent.ACTION_VIEW, request.url))
                 return true
             }
+
+            override fun onPageStarted(view: WebView, url: String, favicon: Bitmap?) = backBridge.reset()
 
             // Sign-in: no injection, reveal page
             override fun onPageFinished(view: WebView, url: String) {

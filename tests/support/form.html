@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html>
+<body>
+<div class="container">
+  <div class="py-2 text-center">
+    <h3>三總松山分院 手部衛生遵從率稽核系統</h3>
+    <p class="lead">請填寫以下稽核資料</p>
+  </div>
+  <form id="mainForm" novalidate>
+    <fieldset class="border p-3 mb-3">
+      <legend class="w-auto h6">1. 稽核人資訊</legend>
+      <div class="mb-3">
+        <label for="auditorUnit" class="form-label">稽核人單位 <span class="text-danger">*</span></label>
+        <select class="form-select" id="auditorUnit" required><option value="" selected disabled>-- 請選擇單位 --</option></select>
+      </div>
+      <div class="mb-3">
+        <label for="auditorName" class="form-label">稽核人姓名 <span class="text-danger">*</span></label>
+        <input type="text" class="form-control" id="auditorName" required>
+        <div id="auditCount" class="form-text"></div>
+      </div>
+      <div class="mb-3">
+        <label for="auditorEmail" class="form-label">稽核人電子信箱 <span class="text-danger">*</span></label>
+        <input type="email" class="form-control" id="auditorEmail" required>
+      </div>
+    </fieldset>
+    <fieldset class="border p-3 mb-3">
+      <legend class="w-auto h6">2. 稽核內容</legend>
+      <div class="mb-3">
+        <label for="timing" class="form-label">洗手時機</label>
+        <select class="form-select" id="timing" required><option value="" selected disabled>-- 請選擇時機 --</option></select>
+      </div>
+      <div class="mb-3">
+        <label for="action" class="form-label">洗手行動</label>
+        <select class="form-select" id="action" required><option value="" selected disabled>-- 請選擇行動 --</option></select>
+      </div>
+      <div class="mb-3" id="stepWrapper" style="display: none;">
+        <label for="step" class="form-label">洗手步驟</label>
+        <select class="form-select" id="step"><option value="" selected disabled>-- 請選擇步驟 --</option></select>
+      </div>
+      <div class="mb-3">
+        <label for="auditDate" class="form-label">稽核時間</label>
+        <div class="input-group">
+          <input type="date" class="form-control" id="auditDate" required>
+          <select class="form-select" id="auditHour" required><option value="" selected disabled>-- 時 --</option></select>
+          <select class="form-select" id="auditMinute" required><option value="" selected disabled>-- 分 --</option></select>
+        </div>
+      </div>
+    </fieldset>
+    <fieldset class="border p-3 mb-3">
+      <legend class="w-auto h6">3. 受稽核人員資訊</legend>
+      <div class="mb-3">
+        <label for="title" class="form-label">受稽核人員職稱</label>
+        <select class="form-select" id="title" required><option value="" selected disabled>-- 請選擇職稱 --</option></select>
+      </div>
+      <div class="mb-3" id="auditedUnitDropdownWrapper">
+        <label for="auditedUnit" class="form-label">受稽核人員單位/科別</label>
+        <select class="form-select" id="auditedUnit" required disabled><option value="" selected disabled>-- 請先選擇職稱 --</option></select>
+      </div>
+      <div class="mb-3" id="auditedUnitDropdownOtherWrapper" style="display: none;">
+        <label for="auditedUnitDropdownOther" class="form-label">請輸入其他單位/科別</label>
+        <input type="text" class="form-control" id="auditedUnitDropdownOther">
+      </div>
+      <div class="mb-3">
+        <label for="auditedName" class="form-label">受稽核人員姓名</label>
+        <input type="text" class="form-control" id="auditedName">
+      </div>
+    </fieldset>
+    <button class="w-100 btn btn-primary btn-lg" type="submit" id="submitButton">送出稽核資料</button>
+  </form>
+</div>
+<div class="modal-body" id="modalMessageBody"></div>
+</body>
+</html>

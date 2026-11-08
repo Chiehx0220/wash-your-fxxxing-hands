@@ -11,7 +11,16 @@
   var SEGMENTED_MAX = 3;
   var CHIP_COLUMNS = [{ maxLength: 3, columns: 4 }, { maxLength: 5, columns: 3 }, { maxLength: 8, columns: 2 }];
   var MENU = { maxHeight: 288, gap: 4, margin: 12, minSpace: 200 };  // minSpace: below this, open upward when roomier
-  var GROUP = '.mb-3';
+  // Page contract: element ids / selectors the injection depends on
+  var PAGE = {
+    form: 'mainForm', date: 'auditDate', hour: 'auditHour', minute: 'auditMinute', count: 'auditCount',
+    modalBody: 'modalMessageBody', timing: 'timing', action: 'action', step: 'step', title: 'title',
+    auditorUnit: 'auditorUnit', auditorName: 'auditorName', auditorEmail: 'auditorEmail',
+    auditedName: 'auditedName', auditedUnit: 'auditedUnit', unitOther: 'auditedUnitDropdownOther'
+  };
+  var SEL = {
+    headline: '.py-2', headingText: '.py-2 h3', legends: 'fieldset legend', group: '.mb-3', inputGroup: '.input-group'
+  };
   var STYLE_ID = 'qa-m3-style';
   var POLL_INTERVAL_MS = 250;
   var POLL_MAX_TRIES = 240;
@@ -45,7 +54,7 @@
     '1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>';
 
   // DOM utilities
-  function $(id) { return document.getElementById(id); }
+  function $(key) { return document.getElementById(PAGE[key] || key); }
 
   function all(selector, root) { return Array.from((root || document).querySelectorAll(selector)); }
 
@@ -83,6 +92,43 @@
     new MutationObserver(handler).observe(node, { childList: true, characterData: true, subtree: true });
   }
 
+  // Overlay stack: native back key arrives via qaBridge (WebMessageListener), closes the topmost layer
+  var Layers = (function () {
+    var stack = [];
+    var bound = false;
+
+    function bridge() {
+      var port = window.qaBridge;
+      if (port && !bound) {
+        bound = true;
+        port.onmessage = function (e) { if (e.data === 'back') back(); };
+      }
+      return port;
+    }
+
+    function report() {
+      var port = bridge();
+      if (port) port.postMessage(String(stack.length));
+    }
+
+    function back() {
+      var hide = stack.pop();
+      if (hide) hide();
+      report();
+    }
+
+    return {
+      open: function (hide) { stack.push(hide); report(); },
+      close: function (hide) {
+        var index = stack.lastIndexOf(hide);
+        if (index < 0) return;
+        stack.splice(index, 1);
+        hide();
+        report();
+      }
+    };
+  })();
+
   // Native bridge: failures degrade to ''
   function callNative(method) {
     var args = Array.prototype.slice.call(arguments, 1);
@@ -106,7 +152,7 @@
   function applyTheme() {
     var css = callNative('themeCss');
     if (!css) return;
-    var old = $(STYLE_ID);
+    var old = document.getElementById(STYLE_ID);
     if (old) old.remove();
     var style = el('style');
     style.id = STYLE_ID;
@@ -115,7 +161,7 @@
   }
 
   function rewriteHeadline() {
-    var heading = document.querySelector('.py-2 h3');
+    var heading = document.querySelector(SEL.headingText);
     if (!heading) return;
     heading.textContent = '';
     append(heading, el('span', 'qa-headline-lead', TEXT.headlineLead), el('span', 'qa-headline-sub', TEXT.headlineSub));
@@ -123,7 +169,7 @@
 
   // Section ordinals ("1." / "一、") stale after the account section moves out
   function stripSectionNumbers() {
-    all('fieldset legend').forEach(function (legend) {
+    all(SEL.legends).forEach(function (legend) {
       var node = legend.firstChild;
       while (node && node.nodeType !== 3) node = node.nextSibling;
       if (node) node.nodeValue = node.nodeValue.replace(/^\s*[0-9０-９一二三四五六七八九十]+\s*[.、．)）]\s*/, '');
@@ -183,7 +229,7 @@
 
   // Label moves inside the filled container (M3 text field anatomy)
   function floatLabels() {
-    all(GROUP).forEach(function (group) {
+    all(SEL.group).forEach(function (group) {
       var label = group.querySelector(':scope > .form-label');
       var control = group.querySelector(':scope > .form-control, :scope > .form-select:not(.qa-hidden-select)');
       if (!label || !control) return;
@@ -227,15 +273,17 @@
       }
       item.addEventListener('click', function () {
         setValue(select, option.value);
-        closeMenu();
+        dismissMenu();
       });
       menu.appendChild(item);
     });
     return selected;
   }
 
+  function dismissMenu() { Layers.close(closeMenu); }
+
   function openMenu(select, host) {
-    closeMenu();
+    dismissMenu();
     var menu = el('div', 'qa-menu');
     menu.setAttribute('role', 'listbox');
     var selected = renderMenuItems(menu, select);
@@ -243,10 +291,11 @@
 
     placeMenu(menu, host.getBoundingClientRect());
     var scrim = el('div', 'qa-scrim');
-    scrim.addEventListener('click', closeMenu);
+    scrim.addEventListener('click', dismissMenu);
     append(document.body, scrim, menu);
     host.classList.add('open');
     openMenuState = { host: host, nodes: [scrim, menu] };
+    Layers.open(closeMenu);
     if (selected) menu.scrollTop = selected.offsetTop - (menu.clientHeight - selected.offsetHeight) / 2;
   }
 
@@ -268,9 +317,9 @@
   // Form defaults
   function setNow() {
     var now = new Date();
-    setValue($('auditDate'), now.getFullYear() + '-' + pad(now.getMonth() + 1) + '-' + pad(now.getDate()));
-    setValue($('auditHour'), pad(now.getHours()));
-    setValue($('auditMinute'), pad(now.getMinutes()));
+    setValue($('date'), now.getFullYear() + '-' + pad(now.getMonth() + 1) + '-' + pad(now.getDate()));
+    setValue($('hour'), pad(now.getHours()));
+    setValue($('minute'), pad(now.getMinutes()));
   }
 
   function restoreAuditor() {
@@ -284,8 +333,8 @@
 
   // Tonal "now" action in the 稽核時間 label row
   function addNowButton() {
-    var date = $('auditDate');
-    var group = date && date.closest('.input-group');
+    var date = $('date');
+    var group = date && date.closest(SEL.inputGroup);
     var label = group && group.previousElementSibling;
     if (!label) return;
     var row = el('div', 'qa-label-row');
@@ -328,7 +377,7 @@
     var name = $('auditorName');
     var email = $('auditorEmail');
     var section = name && name.closest('fieldset');
-    var headline = document.querySelector('.py-2');
+    var headline = document.querySelector(SEL.headline);
     if (!unit || !email || !section || !headline) return;
     var controls = [unit, name, email];
 
@@ -337,10 +386,19 @@
     var scrim = el('div', 'qa-scrim qa-sheet-scrim');
     document.body.appendChild(scrim);
 
-    function setOpen(open) {
-      section.classList.toggle('open', open);
-      scrim.classList.toggle('open', open);
+    function hideSheet() {
+      section.classList.remove('open');
+      scrim.classList.remove('open');
     }
+
+    function showSheet() {
+      if (section.classList.contains('open')) return;
+      section.classList.add('open');
+      scrim.classList.add('open');
+      Layers.open(hideSheet);
+    }
+
+    function dismissSheet() { Layers.close(hideSheet); }
 
     function syncIdentity() {
       var first = Array.from(name.value.trim())[0];
@@ -353,26 +411,26 @@
     }
 
     function syncCount() {
-      var match = /\d+/.exec(($('auditCount') || {}).textContent || '');
+      var match = /\d+/.exec(($('count') || {}).textContent || '');
       avatar.badge.textContent = match ? match[0] : '';
     }
 
-    avatar.button.addEventListener('click', function () { setOpen(true); });
-    scrim.addEventListener('click', function () { setOpen(false); });
+    avatar.button.addEventListener('click', showSheet);
+    scrim.addEventListener('click', dismissSheet);
     sheet.done.addEventListener('click', function () {
       // Evaluate all: every invalid control gets its error state
       var valid = controls.map(function (control) { return control.checkValidity(); }).every(Boolean);
-      if (valid) setOpen(false);
+      if (valid) dismissSheet();
     });
     controls.forEach(function (control) { onChange(control, syncIdentity); });
 
-    var count = $('auditCount');
+    var count = $('count');
     if (count) observeContent(count, syncCount);
 
     syncIdentity();
     syncCount();
-    accountSheet = { section: section, open: function () { setOpen(true); } };
-    if (!controls.every(function (control) { return control.value.trim() !== ''; })) setOpen(true);
+    accountSheet = { section: section, open: showSheet };
+    if (!controls.every(function (control) { return control.value.trim() !== ''; })) showSheet();
   }
 
   // Roster picker
@@ -381,7 +439,7 @@
     var nameInput = $('auditedName');
     var title = $('title');
     var unit = $('auditedUnit');
-    var other = $('auditedUnitDropdownOther');
+    var other = $('unitOther');
     if (!nameInput || !title || !unit) return;
 
     var datalist = el('datalist');
@@ -449,7 +507,7 @@
   }
 
   // Validation feedback: M3 error state
-  function groupOf(control) { return control.closest(GROUP) || control.parentNode; }
+  function groupOf(control) { return control.closest(SEL.group) || control.parentNode; }
 
   function errorText(control) {
     if (control.validity.valueMissing) return control.tagName === 'SELECT' ? TEXT.errorSelect : TEXT.errorMissing;
@@ -469,7 +527,7 @@
   }
 
   function setupValidationFeedback() {
-    var form = $('mainForm');
+    var form = $('form');
 
     // Capture: 'invalid' does not bubble
     form.addEventListener('invalid', function (e) {
@@ -491,7 +549,7 @@
     });
 
     // Page notice references removed asterisks
-    var body = $('modalMessageBody');
+    var body = $('modalBody');
     if (!body) return;
     observeContent(body, function () {
       if (body.textContent.indexOf('紅色星號') >= 0) body.textContent = TEXT.requiredNotice;
@@ -515,7 +573,7 @@
 
   function formReady() {
     var unit = $('auditorUnit');
-    return !!$('mainForm') && !!unit && unit.options.length > 1;
+    return !!$('form') && !!unit && unit.options.length > 1;
   }
 
   // MutationObserver: document.write drops DOMContentLoaded listeners
