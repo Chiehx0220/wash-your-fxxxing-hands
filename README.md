@@ -2,6 +2,10 @@
 
 三總松山分院 手部衛生遵從率稽核系統注入 Material 3 Expressive 樣式與快速填寫功能
 
+## 首次使用
+
+表單的 Apps Script 部署網址不放在原始碼（內部連結、repo 公開）。安裝後第一次開啟會要求輸入 `https://script.google.com/macros/s/…/exec`，只存在本機；連線失敗畫面的「變更連結」可重新輸入。
+
 ## 建置
 
 需要 Android Studio 或 JDK 17 與 Android SDK。
@@ -31,10 +35,11 @@ CI 每次推送會跑這組測試與 `assembleDebug lintDebug`；標籤 `v*` 觸
 ## 結構
 
 - `MainActivity.kt`：WebView、網址白名單、`addDocumentStartJavaScript` 注入、edge-to-edge、預測式返回、久置重載
+- `AppConfig.kt`：部署網址的驗證與儲存
 - `NativeStore.kt`：JS 橋接（偏好設定、名單、主題 CSS、觸覺回饋、開啟 repo）
 - `BackBridge.kt`：返回鍵 ↔ 頁面圖層（選單、表單）
 - `Haptics.kt`：頁面請求的觸覺類型 → 系統常數
 - `ThemeCss.kt` / `Palette.kt`：動態色彩 → `--m3-*` 變數
-- `SplashView.kt` / `ErrorView.kt` / `ExpressiveViews.kt`：啟動畫面、連線失敗畫面與形狀變形動畫
+- `SplashView.kt` / `EmptyStateView.kt`（`ErrorView` / `SetupView`）/ `ExpressiveViews.kt`：啟動畫面、全螢幕狀態畫面與形狀變形動畫
 - Release 啟用 R8 縮小；`proguard-rules.pro` 保留 JS 橋接方法
 - `assets/inject.js` / `theme.css`：表單增強與樣式；`inject.js` 開頭的 `PAGE` / `SEL` 集中列出依賴的原頁面 id 與選擇器

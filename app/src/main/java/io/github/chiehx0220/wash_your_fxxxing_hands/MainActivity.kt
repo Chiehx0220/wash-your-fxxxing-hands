@@ -11,15 +11,13 @@ import android.os.Looper
 import android.os.SystemClock
 import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
+import android.webkit.WebResourceResponse
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.FrameLayout
 import android.widget.Toast
 import androidx.webkit.WebViewCompat
 import androidx.webkit.WebViewFeature
-
-private const val APP_URL =
-    "https://script.google.com/macros/s/DEPLOYMENT_ID/exec"
 
 private const val SIGN_IN_HOST = "accounts.google.com"
 private val ALLOWED_HOSTS = listOf("script.google.com", "googleusercontent.com", SIGN_IN_HOST)
@@ -44,8 +42,10 @@ class MainActivity : Activity() {
     private lateinit var root: FrameLayout
     private lateinit var webView: WebView
     private lateinit var backBridge: BackBridge
-    private lateinit var splash: SplashView
+    private var splash: SplashView? = null
     private lateinit var errorView: ErrorView
+    private lateinit var setupView: SetupView
+    private var appUrl: String? = null
     private var stoppedAt = 0L
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -55,20 +55,24 @@ class MainActivity : Activity() {
 
         webView = WebView(this).apply { setBackgroundColor(surface) }
         backBridge = BackBridge(this, webView)
-        errorView = ErrorView(this, tokens, ::load)
+        errorView = ErrorView(this, tokens, ::load, ::changeLink)
+        setupView = SetupView(this, tokens, ::saveUrl)
         root = FrameLayout(this).apply {
             setBackgroundColor(surface)
             addView(webView)
             addView(errorView)
+            addView(setupView)
         }
         setContentView(root)
-        showSplash()
+        appUrl = AppConfig.url(this)
+        if (appUrl != null) showSplash() else setupView.show()
 
         SystemBars.apply(this, root, surface, lightTheme = !Palette.isDark(this))
         configureWebView()
         installInjections()
 
-        if (savedInstanceState == null) webView.loadUrl(APP_URL) else webView.restoreState(savedInstanceState)
+        val url = appUrl ?: return
+        if (savedInstanceState == null) webView.loadUrl(url) else webView.restoreState(savedInstanceState)
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
@@ -81,11 +85,11 @@ class MainActivity : Activity() {
         stoppedAt = SystemClock.elapsedRealtime()
     }
 
-    // Stale page: reload instead of submitting from it
+    // Stale session: reload
     override fun onStart() {
         super.onStart()
         val stale = stoppedAt != 0L && SystemClock.elapsedRealtime() - stoppedAt > STALE_AFTER_MS
-        if (stale && hostOf(webView.url) != SIGN_IN_HOST) load()
+        if (stale && appUrl != null && hostOf(webView.url) != SIGN_IN_HOST) load()
     }
 
     // API < 33; later, BackBridge's dispatcher callback
@@ -95,16 +99,39 @@ class MainActivity : Activity() {
     }
 
     private fun load() {
+        val url = appUrl ?: return
         errorView.hide()
         showSplash()
-        webView.loadUrl(APP_URL)
+        webView.loadUrl(url)
+    }
+
+    // false: invalid URL
+    private fun saveUrl(input: String): Boolean {
+        val url = AppConfig.parse(input) ?: return false
+        AppConfig.save(this, url)
+        appUrl = url
+        setupView.hide()
+        load()
+        return true
+    }
+
+    private fun changeLink() {
+        splash?.dismiss()
+        errorView.hide()
+        setupView.show(appUrl)
     }
 
     private fun showSplash() {
+        splash?.dismiss()
         val shown = SplashView(this, tokens)
         splash = shown
         root.addView(shown)
         handler.postDelayed({ shown.dismiss() }, SPLASH_TIMEOUT_MS)  // never hide failures
+    }
+
+    private fun showLoadError() {
+        splash?.dismiss()
+        errorView.show()
     }
 
     @SuppressLint("SetJavaScriptEnabled", "JavascriptInterface")
@@ -121,7 +148,7 @@ class MainActivity : Activity() {
 
         val store = NativeStore(
             this,
-            onReady = { runOnUiThread { splash.dismiss() } },
+            onReady = { runOnUiThread { splash?.dismiss() } },
             onHaptic = { kind -> runOnUiThread { Haptics.perform(webView, kind) } },
         )
         webView.addJavascriptInterface(store, "NativeStore")
@@ -132,7 +159,7 @@ class MainActivity : Activity() {
     private fun installInjections() {
         if (!WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
             Toast.makeText(this, R.string.webview_outdated, Toast.LENGTH_LONG).show()
-            splash.dismiss()
+            splash?.dismiss()
             return
         }
         INJECTIONS.forEach { (asset, origin) ->
@@ -155,13 +182,15 @@ class MainActivity : Activity() {
 
         // Sign-in: no injection, reveal page
         override fun onPageFinished(view: WebView, url: String) {
-            if (hostOf(url) == SIGN_IN_HOST) splash.dismiss()
+            if (hostOf(url) == SIGN_IN_HOST) splash?.dismiss()
         }
 
         override fun onReceivedError(view: WebView, request: WebResourceRequest, error: WebResourceError) {
-            if (!request.isForMainFrame) return
-            splash.dismiss()
-            errorView.show()
+            if (request.isForMainFrame) showLoadError()
+        }
+
+        override fun onReceivedHttpError(view: WebView, request: WebResourceRequest, response: WebResourceResponse) {
+            if (request.isForMainFrame) showLoadError()
         }
     }
 }
