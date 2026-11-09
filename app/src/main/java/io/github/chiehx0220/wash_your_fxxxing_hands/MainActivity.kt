@@ -5,9 +5,12 @@ import android.app.Activity
 import android.content.Intent
 import android.graphics.Bitmap
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.window.OnBackInvokedCallback
+import android.window.OnBackInvokedDispatcher
 import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
 import android.webkit.WebView
@@ -35,7 +38,8 @@ class MainActivity : Activity() {
 
     private lateinit var webView: WebView
     private lateinit var splash: SplashView
-    private val backBridge = BackBridge()
+    private val backBridge = BackBridge { syncBackCallback() }
+    private var backCallback: OnBackInvokedCallback? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -64,12 +68,35 @@ class MainActivity : Activity() {
         webView.saveState(outState)
     }
 
+    // API < 33 only: later, the dispatcher callback below handles it
     @Deprecated("Deprecated in Java")
     override fun onBackPressed() {
+        if (!handleBack()) super.onBackPressed()
+    }
+
+    private fun handleBack(): Boolean = when {
+        backBridge.consumeBack() -> true
+        webView.canGoBack() -> true.also { webView.goBack() }
+        else -> false
+    }
+
+    // Predictive back: callback registered only while something can consume it,
+    // otherwise the system back-to-home animation runs
+    private fun syncBackCallback() {
+        if (Build.VERSION.SDK_INT < 33) return
+        val needed = backBridge.hasLayers || webView.canGoBack()
+        val dispatcher = onBackInvokedDispatcher
+        val current = backCallback
         when {
-            backBridge.consumeBack() -> Unit
-            webView.canGoBack() -> webView.goBack()
-            else -> super.onBackPressed()
+            needed && current == null -> {
+                val callback = OnBackInvokedCallback { handleBack() }
+                dispatcher.registerOnBackInvokedCallback(OnBackInvokedDispatcher.PRIORITY_DEFAULT, callback)
+                backCallback = callback
+            }
+            !needed && current != null -> {
+                dispatcher.unregisterOnBackInvokedCallback(current)
+                backCallback = null
+            }
         }
     }
 
@@ -86,9 +113,19 @@ class MainActivity : Activity() {
     private fun configureWebView() {
         webView.settings.javaScriptEnabled = true
         webView.settings.domStorageEnabled = true
+        // Native feel: no pinch zoom, no web scrollbars
+        webView.settings.setSupportZoom(false)
+        webView.settings.builtInZoomControls = false
+        webView.isVerticalScrollBarEnabled = false
+        webView.isHorizontalScrollBarEnabled = false
         if (BuildConfig.DEBUG) WebView.setWebContentsDebuggingEnabled(true)
 
-        webView.addJavascriptInterface(NativeStore(this) { runOnUiThread { splash.dismiss() } }, "NativeStore")
+        val store = NativeStore(
+            this,
+            onReady = { runOnUiThread { splash.dismiss() } },
+            onHaptic = { kind -> runOnUiThread { Haptics.perform(webView, kind) } },
+        )
+        webView.addJavascriptInterface(store, "NativeStore")
         backBridge.install(webView)
         webView.webViewClient = object : WebViewClient() {
             // Host allowlist; others via ACTION_VIEW
@@ -100,6 +137,8 @@ class MainActivity : Activity() {
             }
 
             override fun onPageStarted(view: WebView, url: String, favicon: Bitmap?) = backBridge.reset()
+
+            override fun doUpdateVisitedHistory(view: WebView, url: String, isReload: Boolean) = syncBackCallback()
 
             // Sign-in: no injection, reveal page
             override fun onPageFinished(view: WebView, url: String) {

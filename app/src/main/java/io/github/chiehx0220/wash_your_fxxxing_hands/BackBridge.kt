@@ -8,10 +8,12 @@ import androidx.webkit.WebViewCompat
 import androidx.webkit.WebViewFeature
 
 // Back key -> open page layers (menu, sheet): page reports depth, native replies "back"
-class BackBridge {
+class BackBridge(private val onChange: () -> Unit) {
 
     private var depth = 0
     private var reply: JavaScriptReplyProxy? = null
+
+    val hasLayers: Boolean get() = depth > 0
 
     fun install(webView: WebView) {
         if (!WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER)) return
@@ -23,6 +25,7 @@ class BackBridge {
     fun reset() {
         depth = 0
         reply = null
+        onChange()
     }
 
     fun consumeBack(): Boolean {
@@ -35,6 +38,7 @@ class BackBridge {
     private fun onMessage(message: WebMessageCompat, proxy: JavaScriptReplyProxy) {
         reply = proxy
         depth = message.data?.toIntOrNull() ?: 0
+        onChange()
     }
 
     private companion object {

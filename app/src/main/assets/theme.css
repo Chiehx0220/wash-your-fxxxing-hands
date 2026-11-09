@@ -7,6 +7,16 @@ html, body {
   font-family: 'Roboto Flex', 'Roboto', system-ui, sans-serif !important;
 }
 body { padding: 0 0 24px !important; }
+
+/* Native feel: no text selection on chrome, themed caret / selection / controls */
+html {
+  -webkit-tap-highlight-color: transparent; -webkit-touch-callout: none;
+  -webkit-user-select: none; user-select: none;
+  accent-color: var(--m3-primary);
+}
+input, textarea, .modal-body { -webkit-user-select: text; user-select: text; }
+input, textarea { caret-color: var(--m3-primary); }
+::selection { background: var(--m3-primary-container); color: var(--m3-on-primary-container); }
 .container { max-width: 640px; padding: 8px 16px 0 !important; }
 .text-danger { color: var(--m3-error) !important; }
 
@@ -97,6 +107,14 @@ hr.my-4 { display: none; }
 #submitButton:active { transform: scale(.98); }
 #submitButton:disabled { opacity: .6; }
 
+/* Linear progress while a submit is in flight */
+body:has(#submitButton:disabled)::before {
+  content: ""; position: fixed; top: 0; left: 0; right: 0; height: 4px; z-index: 3000;
+  background: var(--m3-secondary-container) linear-gradient(90deg, var(--m3-primary), var(--m3-primary)) no-repeat;
+  background-size: 35% 100%; animation: qa-progress 1.4s cubic-bezier(.4, 0, .2, 1) infinite;
+}
+@keyframes qa-progress { from { background-position: -50% 0; } to { background-position: 150% 0; } }
+
 /* Tonal now button */
 .qa-label-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
 .qa-label-row .form-label { margin-bottom: 0; }
@@ -173,7 +191,7 @@ fieldset:nth-of-type(3) legend {
 }
 
 /* Exposed dropdown menu */
-.qa-select { cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.qa-select { cursor: pointer; }
 .qa-select .form-select { pointer-events: none; }
 .qa-select.open .form-select { border-color: var(--m3-primary) !important; }
 .qa-selectwrap { position: relative; }
@@ -248,3 +266,8 @@ fieldset.border.qa-sheet.open {
   border-radius: 0; background: transparent; color: var(--m3-on-surface-variant); font: inherit; font-size: 14px;
 }
 .qa-repo svg { width: 18px; height: 18px; }
+
+/* Respect the system "remove animations" setting */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
+}

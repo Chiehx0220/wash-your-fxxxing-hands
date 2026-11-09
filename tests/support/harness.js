@@ -12,7 +12,7 @@ const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 // Boot: injection at document start, then the page populates its options
 async function boot({ prefs = {}, roster = {}, themeCss = '' } = {}) {
   const store = { prefs: JSON.stringify(prefs) };
-  const calls = { ready: 0, openRepo: 0 };
+  const calls = { ready: 0, openRepo: 0, haptics: [] };
   const bridge = { messages: [], postMessage(message) { bridge.messages.push(message); } };
   const dom = new JSDOM(FORM, {
     url: 'https://x-script.googleusercontent.com/userCodeAppPanel',
@@ -22,6 +22,7 @@ async function boot({ prefs = {}, roster = {}, themeCss = '' } = {}) {
       window.NativeStore = {
         ready() { calls.ready++; },
         openRepo() { calls.openRepo++; },
+        haptic(kind) { calls.haptics.push(kind); },
         themeCss() { return themeCss; },
         roster() { return JSON.stringify(roster); },
         get(key) { return store[key] || ''; },

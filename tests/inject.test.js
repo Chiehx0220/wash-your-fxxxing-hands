@@ -204,3 +204,28 @@ test('roster.json: valid shape, no duplicate names per department', { skip: !fs.
     names.forEach((name) => assert.ok(typeof name === 'string' && name.trim() === name && name, dept));
   });
 });
+
+test('haptics: tick on selection, confirm on actions, one reject per failed submit', async () => {
+  const t = await boot({ prefs: AUDITOR });
+  t.calls.haptics.length = 0;
+
+  t.$$('.qa-chip')[0].click();
+  assert.deepStrictEqual(t.calls.haptics, ['tick']);
+
+  t.document.querySelector('.qa-now').click();
+  assert.deepStrictEqual(t.calls.haptics, ['tick', 'confirm']);
+
+  t.calls.haptics.length = 0;
+  t.$('submitButton').click();
+  await wait(20);
+  assert.strictEqual(t.calls.haptics.filter((kind) => kind === 'reject').length, 1);
+  t.close();
+});
+
+test('keyboard: email layout, autofill and IME action hints', async () => {
+  const t = await boot();
+  assert.strictEqual(t.$('auditorEmail').getAttribute('inputmode'), 'email');
+  assert.strictEqual(t.$('auditorName').getAttribute('enterkeyhint'), 'next');
+  assert.strictEqual(t.$('auditorEmail').hasAttribute('list'), false);
+  t.close();
+});

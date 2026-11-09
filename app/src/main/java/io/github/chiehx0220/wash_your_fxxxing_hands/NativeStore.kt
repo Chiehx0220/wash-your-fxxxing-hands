@@ -7,13 +7,21 @@ import android.webkit.JavascriptInterface
 import java.io.IOException
 
 // JS bridge: window.NativeStore
-class NativeStore(private val context: Context, private val onReady: () -> Unit) {
+class NativeStore(
+    private val context: Context,
+    private val onReady: () -> Unit,
+    private val onHaptic: (String) -> Unit,
+) {
 
     private val prefs = context.getSharedPreferences(PREFS_FILE, Context.MODE_PRIVATE)
 
     // Bridge thread
     @JavascriptInterface
     fun ready() = onReady()
+
+    // kind: tick | confirm | reject
+    @JavascriptInterface
+    fun haptic(kind: String) = onHaptic(kind)
 
     @JavascriptInterface
     fun themeCss(): String = ThemeCss.build(context)

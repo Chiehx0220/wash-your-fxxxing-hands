@@ -16,7 +16,8 @@
     form: 'mainForm', date: 'auditDate', hour: 'auditHour', minute: 'auditMinute', count: 'auditCount',
     modalBody: 'modalMessageBody', timing: 'timing', action: 'action', step: 'step', title: 'title',
     auditorUnit: 'auditorUnit', auditorName: 'auditorName', auditorEmail: 'auditorEmail',
-    auditedName: 'auditedName', auditedUnit: 'auditedUnit', unitOther: 'auditedUnitDropdownOther'
+    auditedName: 'auditedName', auditedUnit: 'auditedUnit', unitOther: 'auditedUnitDropdownOther',
+    submit: 'submitButton'
   };
   var SEL = {
     headline: '.py-2', headingText: '.py-2 h3', legends: 'fieldset legend', group: '.mb-3', inputGroup: '.input-group'
@@ -556,11 +557,53 @@
     });
   }
 
+  // Soft keyboard: layout and IME action per field; page datalist popup removed
+  var KEYBOARD = {
+    auditorName: { enterkeyhint: 'next' },
+    auditorEmail: { inputmode: 'email', enterkeyhint: 'done', list: null },  // list: datalist popup mis-anchors over the IME
+    auditedName: { enterkeyhint: 'done' }
+  };
+
+  function setupKeyboard() {
+    Object.keys(KEYBOARD).forEach(function (key) {
+      var field = $(key);
+      if (!field) return;
+      Object.keys(KEYBOARD[key]).forEach(function (name) {
+        var value = KEYBOARD[key][name];
+        if (value === null) field.removeAttribute(name);
+        else field.setAttribute(name, value);
+      });
+    });
+  }
+
+  // Haptics: delegated, one native kind per interaction class
+  var HAPTIC_REJECT_GAP_MS = 400;  // 'invalid' fires per control: collapse to one pulse
+
+  function setupHaptics() {
+    var tick = '.qa-chip, .qa-menu-item, .qa-select, .qa-avatar-btn';
+    var confirm = '.qa-now, .qa-sheet-done, #' + PAGE.submit;
+    document.addEventListener('click', function (e) {
+      var target = e.target.closest ? e.target : e.target.parentElement;
+      if (!target) return;
+      if (target.closest(confirm)) callNative('haptic', 'confirm');
+      else if (target.closest(tick)) callNative('haptic', 'tick');
+    }, true);
+
+    var last = 0;
+    $('form').addEventListener('invalid', function () {
+      var now = Date.now();
+      if (now - last < HAPTIC_REJECT_GAP_MS) return;
+      last = now;
+      callNative('haptic', 'reject');
+    }, true);
+  }
+
   // Bootstrap
   var STEPS = [
     applyTheme, rewriteHeadline, stripSectionNumbers, restoreAuditor, setNow,
     function () { CHIP_FIELDS.forEach(chipifySelect); },
-    setupRoster, floatLabels, enhanceSelects, setupAccount, setupValidationFeedback, addNowButton
+    setupRoster, floatLabels, enhanceSelects, setupAccount, setupValidationFeedback, addNowButton,
+    setupKeyboard, setupHaptics
   ];
 
   function init() {
