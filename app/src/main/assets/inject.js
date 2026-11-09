@@ -10,8 +10,9 @@
   var CHIP_LIMIT = 12;
   var SEGMENTED_MAX = 3;
   var CHIP_COLUMNS = [{ maxLength: 3, columns: 4 }, { maxLength: 5, columns: 3 }, { maxLength: 8, columns: 2 }];
-  var MENU = { maxHeight: 288, gap: 4, margin: 12, minSpace: 200 };  // minSpace: below this, open upward when roomier
-  // Page contract: element ids / selectors the injection depends on
+  var MENU = { maxHeight: 288, gap: 4, margin: 12, minSpace: 200 };  // minSpace: open upward when roomier
+  var NAMES_LIST_ID = 'qa-names';
+  // Page contract: ids / selectors of the source page
   var PAGE = {
     form: 'mainForm', date: 'auditDate', hour: 'auditHour', minute: 'auditMinute', count: 'auditCount',
     modalBody: 'modalMessageBody', timing: 'timing', action: 'action', step: 'step', title: 'title',
@@ -21,6 +22,18 @@
   };
   var SEL = {
     headline: '.py-2', headingText: '.py-2 h3', legends: 'fieldset legend', group: '.mb-3', inputGroup: '.input-group'
+  };
+  // Haptic kind per click target; rejectGapMs: 'invalid' fires per control
+  var HAPTIC = {
+    tick: '.qa-chip, .qa-menu-item, .qa-select, .qa-avatar-btn',
+    confirm: '.qa-now, .qa-sheet-done, #' + PAGE.submit,
+    rejectGapMs: 400
+  };
+  // Soft keyboard hints per field; null removes the attribute (page datalist popup mis-anchors over the IME)
+  var KEYBOARD = {
+    auditorName: { enterkeyhint: 'next' },
+    auditorEmail: { inputmode: 'email', enterkeyhint: 'done', list: null },
+    auditedName: { enterkeyhint: 'done' }
   };
   var STYLE_ID = 'qa-m3-style';
   var POLL_INTERVAL_MS = 250;
@@ -93,7 +106,7 @@
     new MutationObserver(handler).observe(node, { childList: true, characterData: true, subtree: true });
   }
 
-  // Overlay stack: native back key arrives via qaBridge (WebMessageListener), closes the topmost layer
+  // Overlay stack; native back arrives via qaBridge and closes the topmost layer
   var Layers = (function () {
     var stack = [];
     var bound = false;
@@ -130,11 +143,13 @@
     };
   })();
 
-  // Native bridge: failures degrade to ''
+  // NativeStore: failures degrade to ''
   function callNative(method) {
     var args = Array.prototype.slice.call(arguments, 1);
     try { return window.NativeStore[method].apply(window.NativeStore, args); } catch (e) { return ''; }
   }
+
+  function haptic(kind) { callNative('haptic', kind); }
 
   function parseJson(text, fallback) {
     try { return JSON.parse(text); } catch (e) { return fallback; }
@@ -168,7 +183,7 @@
     append(heading, el('span', 'qa-headline-lead', TEXT.headlineLead), el('span', 'qa-headline-sub', TEXT.headlineSub));
   }
 
-  // Section ordinals ("1." / "一、") stale after the account section moves out
+  // Section ordinals ("1." / "一、"): stale once the account section moves out
   function stripSectionNumbers() {
     all(SEL.legends).forEach(function (legend) {
       var node = legend.firstChild;
@@ -200,7 +215,9 @@
 
   function markActive(row, value) {
     Array.from(row.children).forEach(function (chip) {
-      chip.classList.toggle('on', chip.textContent === value);
+      var on = chip.textContent === value;
+      chip.classList.toggle('on', on);
+      chip.setAttribute('aria-pressed', String(on));
     });
   }
 
@@ -220,7 +237,7 @@
     var row = el('div', 'qa-chips' + (labels.length <= SEGMENTED_MAX ? ' qa-segmented' : ''));
     renderChips(row, labels, function (label) { setValue(select, label); });
 
-    // Select retained: validation + page logic
+    // Select kept hidden: validation + page logic
     select.parentNode.style.position = 'relative';
     select.classList.add('qa-hidden-select');
     select.parentNode.insertBefore(row, select);
@@ -240,12 +257,13 @@
     });
   }
 
-  // Exposed dropdown menu: replaces the native picker
+  // Exposed dropdown menu (replaces native picker)
   var openMenuState = null;
 
   function closeMenu() {
     if (!openMenuState) return;
     openMenuState.host.classList.remove('open');
+    openMenuState.host.setAttribute('aria-expanded', 'false');
     openMenuState.nodes.forEach(function (node) { node.remove(); });
     openMenuState = null;
   }
@@ -268,6 +286,7 @@
       if (option.disabled || option.value === '') return;
       var item = button('qa-menu-item', option.textContent);
       item.setAttribute('role', 'option');
+      item.setAttribute('aria-selected', String(option.value === select.value));
       if (option.value === select.value) {
         item.classList.add('on');
         selected = item;
@@ -295,6 +314,7 @@
     scrim.addEventListener('click', dismissMenu);
     append(document.body, scrim, menu);
     host.classList.add('open');
+    host.setAttribute('aria-expanded', 'true');
     openMenuState = { host: host, nodes: [scrim, menu] };
     Layers.open(closeMenu);
     if (selected) menu.scrollTop = selected.offsetTop - (menu.clientHeight - selected.offsetHeight) / 2;
@@ -309,6 +329,9 @@
         host.appendChild(select);
       }
       host.classList.add('qa-select');
+      host.setAttribute('role', 'button');
+      host.setAttribute('aria-haspopup', 'listbox');
+      host.setAttribute('aria-expanded', 'false');
       host.addEventListener('click', function () {
         if (!select.disabled) openMenu(select, host);
       });
@@ -346,7 +369,7 @@
     append(row, label, now);
   }
 
-  // Auditor account: avatar + modal bottom sheet (fields stay in the form: validation + submit)
+  // Account: avatar + modal bottom sheet; fields stay in the form (validation, submit)
   var accountSheet = null;
 
   function buildAvatar(host) {
@@ -444,14 +467,14 @@
     if (!nameInput || !title || !unit) return;
 
     var datalist = el('datalist');
-    datalist.id = 'qa-names';
+    datalist.id = NAMES_LIST_ID;
     document.body.appendChild(datalist);
     nameInput.setAttribute('list', datalist.id);
     nameInput.setAttribute('autocomplete', 'off');
 
     var nameRow = insertChipRow(nameInput);
     var deptRow = other ? insertChipRow(other) : null;
-    var pickedName = '';  // chip-filled only: auto-cleared on selection change
+    var pickedName = '';  // chip-filled only: cleared when roster selection changes
 
     function isDoctor() { return title.value === '醫師'; }
 
@@ -460,7 +483,7 @@
       return unit.value === '其他' ? (other ? other.value.trim() : '') : unit.value;
     }
 
-    // Unit options rebuilt per title: evaluate per render
+    // Page unit options vary by title: evaluated per render
     function rosterOnlyDepts() {
       var known = {};
       all('option', unit).forEach(function (o) { known[o.value] = true; });
@@ -557,13 +580,7 @@
     });
   }
 
-  // Soft keyboard: layout and IME action per field; page datalist popup removed
-  var KEYBOARD = {
-    auditorName: { enterkeyhint: 'next' },
-    auditorEmail: { inputmode: 'email', enterkeyhint: 'done', list: null },  // list: datalist popup mis-anchors over the IME
-    auditedName: { enterkeyhint: 'done' }
-  };
-
+  // Soft keyboard
   function setupKeyboard() {
     Object.keys(KEYBOARD).forEach(function (key) {
       var field = $(key);
@@ -576,25 +593,21 @@
     });
   }
 
-  // Haptics: delegated, one native kind per interaction class
-  var HAPTIC_REJECT_GAP_MS = 400;  // 'invalid' fires per control: collapse to one pulse
-
+  // Haptics: delegated click, throttled reject
   function setupHaptics() {
-    var tick = '.qa-chip, .qa-menu-item, .qa-select, .qa-avatar-btn';
-    var confirm = '.qa-now, .qa-sheet-done, #' + PAGE.submit;
     document.addEventListener('click', function (e) {
       var target = e.target.closest ? e.target : e.target.parentElement;
       if (!target) return;
-      if (target.closest(confirm)) callNative('haptic', 'confirm');
-      else if (target.closest(tick)) callNative('haptic', 'tick');
+      if (target.closest(HAPTIC.confirm)) haptic('confirm');
+      else if (target.closest(HAPTIC.tick)) haptic('tick');
     }, true);
 
     var last = 0;
     $('form').addEventListener('invalid', function () {
       var now = Date.now();
-      if (now - last < HAPTIC_REJECT_GAP_MS) return;
+      if (now - last < HAPTIC.rejectGapMs) return;
       last = now;
-      callNative('haptic', 'reject');
+      haptic('reject');
     }, true);
   }
 

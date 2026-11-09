@@ -5,60 +5,68 @@ import android.app.Activity
 import android.content.Intent
 import android.graphics.Bitmap
 import android.net.Uri
-import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
-import android.window.OnBackInvokedCallback
-import android.window.OnBackInvokedDispatcher
+import android.os.SystemClock
 import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.FrameLayout
 import android.widget.Toast
-import androidx.core.view.WindowInsetsControllerCompat
 import androidx.webkit.WebViewCompat
 import androidx.webkit.WebViewFeature
 
 private const val APP_URL =
     "https://script.google.com/macros/s/DEPLOYMENT_ID/exec"
 
-// (asset, origin rule)
+private const val SIGN_IN_HOST = "accounts.google.com"
+private val ALLOWED_HOSTS = listOf("script.google.com", "googleusercontent.com", SIGN_IN_HOST)
+
+// asset -> origin rule
 private val INJECTIONS = listOf(
     "inject.js" to "https://*.googleusercontent.com",  // sandbox frame
     "hide_banner.js" to "https://script.google.com",   // wrapper frame
 )
 
-private const val SIGN_IN_HOST = "accounts.google.com"
-private val ALLOWED_HOSTS = listOf("script.google.com", "googleusercontent.com", SIGN_IN_HOST)
 private const val SPLASH_TIMEOUT_MS = 15_000L
+private const val STALE_AFTER_MS = 2 * 60 * 60 * 1000L  // background time before reload
+
+private fun hostOf(url: String?): String? = url?.let { Uri.parse(it).host }
+
+private fun isAllowed(host: String) = ALLOWED_HOSTS.any { host == it || host.endsWith(".$it") }
 
 class MainActivity : Activity() {
 
+    private val handler = Handler(Looper.getMainLooper())
+    private lateinit var tokens: Map<String, Int>
+    private lateinit var root: FrameLayout
     private lateinit var webView: WebView
+    private lateinit var backBridge: BackBridge
     private lateinit var splash: SplashView
-    private val backBridge = BackBridge { syncBackCallback() }
-    private var backCallback: OnBackInvokedCallback? = null
+    private lateinit var errorView: ErrorView
+    private var stoppedAt = 0L
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        val tokens = Palette.tokens(this)
+        tokens = Palette.tokens(this)
         val surface = tokens.getValue("surface")
 
         webView = WebView(this).apply { setBackgroundColor(surface) }
-        splash = SplashView(this, tokens)
-        setContentView(FrameLayout(this).apply {
+        backBridge = BackBridge(this, webView)
+        errorView = ErrorView(this, tokens, ::load)
+        root = FrameLayout(this).apply {
+            setBackgroundColor(surface)
             addView(webView)
-            addView(splash)
-        })
+            addView(errorView)
+        }
+        setContentView(root)
+        showSplash()
 
-        applySystemBars(surface, light = !Palette.isDark(this))
+        SystemBars.apply(this, root, surface, lightTheme = !Palette.isDark(this))
         configureWebView()
         installInjections()
-
-        // Timeout: never hide failures behind the overlay
-        Handler(Looper.getMainLooper()).postDelayed({ splash.dismiss() }, SPLASH_TIMEOUT_MS)
 
         if (savedInstanceState == null) webView.loadUrl(APP_URL) else webView.restoreState(savedInstanceState)
     }
@@ -68,54 +76,45 @@ class MainActivity : Activity() {
         webView.saveState(outState)
     }
 
-    // API < 33 only: later, the dispatcher callback below handles it
+    override fun onStop() {
+        super.onStop()
+        stoppedAt = SystemClock.elapsedRealtime()
+    }
+
+    // Stale page: reload instead of submitting from it
+    override fun onStart() {
+        super.onStart()
+        val stale = stoppedAt != 0L && SystemClock.elapsedRealtime() - stoppedAt > STALE_AFTER_MS
+        if (stale && hostOf(webView.url) != SIGN_IN_HOST) load()
+    }
+
+    // API < 33; later, BackBridge's dispatcher callback
     @Deprecated("Deprecated in Java")
     override fun onBackPressed() {
-        if (!handleBack()) super.onBackPressed()
+        if (!backBridge.handle()) super.onBackPressed()
     }
 
-    private fun handleBack(): Boolean = when {
-        backBridge.consumeBack() -> true
-        webView.canGoBack() -> true.also { webView.goBack() }
-        else -> false
+    private fun load() {
+        errorView.hide()
+        showSplash()
+        webView.loadUrl(APP_URL)
     }
 
-    // Predictive back: callback registered only while something can consume it,
-    // otherwise the system back-to-home animation runs
-    private fun syncBackCallback() {
-        if (Build.VERSION.SDK_INT < 33) return
-        val needed = backBridge.hasLayers || webView.canGoBack()
-        val dispatcher = onBackInvokedDispatcher
-        val current = backCallback
-        when {
-            needed && current == null -> {
-                val callback = OnBackInvokedCallback { handleBack() }
-                dispatcher.registerOnBackInvokedCallback(OnBackInvokedDispatcher.PRIORITY_DEFAULT, callback)
-                backCallback = callback
-            }
-            !needed && current != null -> {
-                dispatcher.unregisterOnBackInvokedCallback(current)
-                backCallback = null
-            }
-        }
-    }
-
-    private fun applySystemBars(surface: Int, light: Boolean) {
-        window.statusBarColor = surface
-        window.navigationBarColor = surface
-        WindowInsetsControllerCompat(window, window.decorView).apply {
-            isAppearanceLightStatusBars = light
-            isAppearanceLightNavigationBars = light
-        }
+    private fun showSplash() {
+        val shown = SplashView(this, tokens)
+        splash = shown
+        root.addView(shown)
+        handler.postDelayed({ shown.dismiss() }, SPLASH_TIMEOUT_MS)  // never hide failures
     }
 
     @SuppressLint("SetJavaScriptEnabled", "JavascriptInterface")
     private fun configureWebView() {
-        webView.settings.javaScriptEnabled = true
-        webView.settings.domStorageEnabled = true
-        // Native feel: no pinch zoom, no web scrollbars
-        webView.settings.setSupportZoom(false)
-        webView.settings.builtInZoomControls = false
+        webView.settings.apply {
+            javaScriptEnabled = true
+            domStorageEnabled = true
+            setSupportZoom(false)
+            builtInZoomControls = false
+        }
         webView.isVerticalScrollBarEnabled = false
         webView.isHorizontalScrollBarEnabled = false
         if (BuildConfig.DEBUG) WebView.setWebContentsDebuggingEnabled(true)
@@ -126,39 +125,43 @@ class MainActivity : Activity() {
             onHaptic = { kind -> runOnUiThread { Haptics.perform(webView, kind) } },
         )
         webView.addJavascriptInterface(store, "NativeStore")
-        backBridge.install(webView)
-        webView.webViewClient = object : WebViewClient() {
-            // Host allowlist; others via ACTION_VIEW
-            override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
-                val host = request.url.host.orEmpty()
-                if (ALLOWED_HOSTS.any { host == it || host.endsWith(".$it") }) return false
-                startActivity(Intent(Intent.ACTION_VIEW, request.url))
-                return true
-            }
-
-            override fun onPageStarted(view: WebView, url: String, favicon: Bitmap?) = backBridge.reset()
-
-            override fun doUpdateVisitedHistory(view: WebView, url: String, isReload: Boolean) = syncBackCallback()
-
-            // Sign-in: no injection, reveal page
-            override fun onPageFinished(view: WebView, url: String) {
-                if (Uri.parse(url).host == SIGN_IN_HOST) splash.dismiss()
-            }
-
-            override fun onReceivedError(view: WebView, request: WebResourceRequest, error: WebResourceError) {
-                if (request.isForMainFrame) splash.dismiss()
-            }
-        }
+        backBridge.install()
+        webView.webViewClient = PageClient()
     }
 
     private fun installInjections() {
         if (!WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
-            Toast.makeText(this, "WebView 版本過舊，快速填寫功能無法使用", Toast.LENGTH_LONG).show()
+            Toast.makeText(this, R.string.webview_outdated, Toast.LENGTH_LONG).show()
             splash.dismiss()
             return
         }
         INJECTIONS.forEach { (asset, origin) ->
             WebViewCompat.addDocumentStartJavaScript(webView, readAsset(asset), setOf(origin))
+        }
+    }
+
+    private inner class PageClient : WebViewClient() {
+
+        // Host allowlist; others via ACTION_VIEW
+        override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
+            if (isAllowed(request.url.host.orEmpty())) return false
+            startActivity(Intent(Intent.ACTION_VIEW, request.url))
+            return true
+        }
+
+        override fun onPageStarted(view: WebView, url: String, favicon: Bitmap?) = backBridge.reset()
+
+        override fun doUpdateVisitedHistory(view: WebView, url: String, isReload: Boolean) = backBridge.sync()
+
+        // Sign-in: no injection, reveal page
+        override fun onPageFinished(view: WebView, url: String) {
+            if (hostOf(url) == SIGN_IN_HOST) splash.dismiss()
+        }
+
+        override fun onReceivedError(view: WebView, request: WebResourceRequest, error: WebResourceError) {
+            if (!request.isForMainFrame) return
+            splash.dismiss()
+            errorView.show()
         }
     }
 }

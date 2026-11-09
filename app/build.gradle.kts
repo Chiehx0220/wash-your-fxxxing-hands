@@ -5,12 +5,12 @@ plugins {
 
 android {
     namespace = "io.github.chiehx0220.wash_your_fxxxing_hands"
-    compileSdk = 34
+    compileSdk = 35
 
     defaultConfig {
         applicationId = "io.github.chiehx0220.wash_your_fxxxing_hands"
         minSdk = 24
-        targetSdk = 34
+        targetSdk = 35
         versionCode = (findProperty("versionCode") as String?)?.toInt() ?: 1
         versionName = (findProperty("versionName") as String?) ?: "1.0"
     }
@@ -29,6 +29,9 @@ android {
     }
     buildTypes {
         release {
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
             signingConfig = signingConfigs.findByName("release")
         }
     }

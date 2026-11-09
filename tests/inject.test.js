@@ -229,3 +229,24 @@ test('keyboard: email layout, autofill and IME action hints', async () => {
   assert.strictEqual(t.$('auditorEmail').hasAttribute('list'), false);
   t.close();
 });
+
+test('a11y: chip, menu and select states are exposed', async () => {
+  const t = await boot({ prefs: AUDITOR });
+  t.pick('timing', '接觸病人前');
+  const chips = Array.from(t.$('timing').closest('.mb-3').querySelectorAll('.qa-chip'));
+  assert.ok(chips.length > 1);
+  assert.deepStrictEqual(chips.map((chip) => chip.getAttribute('aria-pressed')),
+    chips.map((chip) => String(chip.textContent === '接觸病人前')));
+  t.close();
+
+  const m = await boot();
+  const host = m.$('auditorUnit').closest('.qa-select');
+  assert.strictEqual(host.getAttribute('aria-haspopup'), 'listbox');
+  assert.strictEqual(host.getAttribute('aria-expanded'), 'false');
+  host.click();
+  assert.strictEqual(host.getAttribute('aria-expanded'), 'true');
+  assert.ok(m.$$('.qa-menu-item').every((item) => item.hasAttribute('aria-selected')));
+  m.back();
+  assert.strictEqual(host.getAttribute('aria-expanded'), 'false');
+  m.close();
+});

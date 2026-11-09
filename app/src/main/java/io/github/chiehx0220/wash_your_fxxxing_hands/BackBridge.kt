@@ -1,44 +1,64 @@
 package io.github.chiehx0220.wash_your_fxxxing_hands
 
+import android.app.Activity
 import android.net.Uri
+import android.os.Build
 import android.webkit.WebView
+import android.window.OnBackInvokedCallback
+import android.window.OnBackInvokedDispatcher
 import androidx.webkit.JavaScriptReplyProxy
-import androidx.webkit.WebMessageCompat
 import androidx.webkit.WebViewCompat
 import androidx.webkit.WebViewFeature
 
-// Back key -> open page layers (menu, sheet): page reports depth, native replies "back"
-class BackBridge(private val onChange: () -> Unit) {
+// Back routing: page layers (qaBridge: depth in, "back" out) -> WebView history -> system
+class BackBridge(private val activity: Activity, private val webView: WebView) {
 
     private var depth = 0
     private var reply: JavaScriptReplyProxy? = null
+    private var callback: OnBackInvokedCallback? = null
 
-    val hasLayers: Boolean get() = depth > 0
-
-    fun install(webView: WebView) {
+    fun install() {
         if (!WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER)) return
         WebViewCompat.addWebMessageListener(webView, NAME, ORIGINS) { _, message, _: Uri, _, proxy ->
-            onMessage(message, proxy)
+            reply = proxy
+            depth = message.data?.toIntOrNull() ?: 0
+            sync()
         }
     }
 
     fun reset() {
         depth = 0
         reply = null
-        onChange()
+        sync()
     }
 
-    fun consumeBack(): Boolean {
-        val proxy = reply ?: return false
-        if (depth <= 0) return false
-        proxy.postMessage(BACK)
-        return true
+    // false: nothing to consume
+    fun handle(): Boolean {
+        val proxy = reply
+        return when {
+            proxy != null && depth > 0 -> true.also { proxy.postMessage(BACK) }
+            webView.canGoBack() -> true.also { webView.goBack() }
+            else -> false
+        }
     }
 
-    private fun onMessage(message: WebMessageCompat, proxy: JavaScriptReplyProxy) {
-        reply = proxy
-        depth = message.data?.toIntOrNull() ?: 0
-        onChange()
+    // API 33+: registered only while consumable, else system back-to-home animation
+    fun sync() {
+        if (Build.VERSION.SDK_INT < 33) return
+        val needed = depth > 0 || webView.canGoBack()
+        val dispatcher = activity.onBackInvokedDispatcher
+        val current = callback
+        when {
+            needed && current == null -> {
+                callback = OnBackInvokedCallback { handle() }.also {
+                    dispatcher.registerOnBackInvokedCallback(OnBackInvokedDispatcher.PRIORITY_DEFAULT, it)
+                }
+            }
+            !needed && current != null -> {
+                dispatcher.unregisterOnBackInvokedCallback(current)
+                callback = null
+            }
+        }
     }
 
     private companion object {

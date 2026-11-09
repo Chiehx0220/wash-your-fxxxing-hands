@@ -76,8 +76,6 @@ class SplashView(context: Context, tokens: Map<String, Int>) : LinearLayout(cont
         }
     }
 
-    private fun dp(value: Int) = (value * resources.displayMetrics.density).toInt()
-
     private companion object {
         const val SUBTITLE = "大風吹 吹什麼 吹沒洗手的人"
         const val FADE_MS = 240L
